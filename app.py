@@ -8,7 +8,7 @@ from keras.models import load_model
 @st.cache_resource
 def load_trained_model():
     return load_model(
-        '/content/satellite-imagery.h5',
+        'satellite-imagery.h5',
         custom_objects={
             'dice_loss_plus_1focal_loss': total_loss,
             'jaccard_coef': jaccard_coef
