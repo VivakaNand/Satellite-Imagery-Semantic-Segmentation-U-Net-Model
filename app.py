@@ -1,53 +1,67 @@
 import streamlit as st
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import numpy as np
 from PIL import Image
+import matplotlib.pyplot as plt
+from keras.models import load_model
 
-# Load the pre-trained model
-MODEL_PATH = "satellite-imagery.h5"
-model = load_model(MODEL_PATH)
+# Load the model
+@st.cache_resource
+def load_trained_model():
+    return load_model(
+        '/content/satellite-imagery.h5',
+        custom_objects={
+            'dice_loss_plus_1focal_loss': total_loss,
+            'jaccard_coef': jaccard_coef
+        }
+    )
 
-# Define a function to preprocess the image
-def preprocess_image(image, target_size):
-    """Preprocess the image to the required input size of the model."""
-    image = image.resize(target_size)  # Resize image to model's input size
-    image_array = img_to_array(image)  # Convert to array
-    image_array = np.expand_dims(image_array, axis=0)  # Add batch dimension
-    image_array = image_array / 255.0  # Normalize to [0, 1]
-    return image_array
+saved_model = load_trained_model()
 
-# Streamlit UI
+# Define image preprocessing function
+def preprocess_image(image_path, target_size=(256, 256)):
+    image = Image.open(image_path)
+    image = image.resize(target_size)
+    image = np.array(image)
+    image = np.expand_dims(image, axis=0)  # Add batch dimension
+    return image
+
+# Streamlit app
 st.title("Satellite Image Prediction App")
-st.write("Upload a satellite image to see the prediction results.")
+st.write("Upload a satellite image to see the original and predicted images.")
 
-# Image upload feature
-uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+# File uploader
+uploaded_file = st.file_uploader("Upload an image file", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
-    # Display uploaded image
-    st.subheader("Uploaded Image:")
-    image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded Image", use_column_width=True)
+    # Display the uploaded image
+    st.subheader("Uploaded Image")
+    uploaded_image = Image.open(uploaded_file)
+    st.image(uploaded_image, caption="Uploaded Image", use_column_width=True)
 
-    # Preprocess the uploaded image
+    # Preprocess the image
     st.write("Processing the image...")
-    processed_image = preprocess_image(image, target_size=(224, 224))  # Adjust size as per your model
+    preprocessed_image = preprocess_image(uploaded_file)
 
-    # Make prediction
-    st.write("Predicting using the model...")
-    predictions = model.predict(processed_image)
-    predicted_label = np.argmax(predictions, axis=1)
+    # Perform prediction
+    st.write("Performing prediction...")
+    prediction = saved_model.predict(preprocessed_image)
 
-    # Display the results
-    st.subheader("Prediction Results:")
-    st.write(f"Predicted Class: {predicted_label[0]}")
-    st.write(f"Prediction Probabilities: {predictions[0]}")
+    # Post-process the prediction
+    predicted_image = np.argmax(prediction, axis=3)[0, :, :]  # Remove batch dimension
 
-   # Generate and display the model-generated image (if applicable)
-    if model.outputs[0].shape[1:] == (224, 224, 3):  # Check if the model outputs an image
-        st.subheader("Model-Generated Image:")
-        generated_image_array = model.predict(processed_image)  # Predict
-        generated_image_array = np.squeeze(generated_image_array, axis=0)  # Remove batch dimension
-        generated_image = Image.fromarray((generated_image_array * 255).astype('uint8'))  # Convert to image
-        st.image(generated_image, caption="Generated Image", use_column_width=True)
+    # Display the original and predicted images side by side
+    st.subheader("Original and Predicted Images")
+    fig, axes = plt.subplots(1, 2, figsize=(14, 8))
+
+    # Original Image
+    axes[0].set_title("Original Image")
+    axes[0].imshow(uploaded_image)
+
+    # Predicted Image
+    axes[1].set_title("Predicted Image")
+    axes[1].imshow(predicted_image, cmap='viridis')  # Adjust colormap as needed
+
+    # Render the matplotlib figure in Streamlit
+    st.pyplot(fig)
+
+st.write("Note: Ensure the uploaded image is compatible with the model's expected input format.")
